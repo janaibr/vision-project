@@ -1,0 +1,6 @@
+/Users/abdulbasit/Desktop/cv project/runs/detect/proposed_sci_enhanced_images/2015_02446.jpg
+/Users/abdulbasit/Desktop/cv project/runs/detect/proposed_sci_enhanced_images/2015_06400.jpg
+/Users/abdulbasit/Desktop/cv project/runs/detect/proposed_sci_enhanced_images/annotations.png
+/Users/abdulbasit/Desktop/cv project/runs/detect/proposed_sci_enhanced_images/exdark1.png
+/Users/abdulbasit/Desktop/cv project/runs/detect/proposed_sci_enhanced_images/Thumbnails.png
+/Users/abdulbasit/Desktop/cv project/runs/detect/proposed_sci_enhanced_images/2015_00003.png

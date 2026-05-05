@@ -1,0 +1,6 @@
+/Users/abdulbasit/Desktop/cv project/data/ExDark/SPIC/2015_02446.jpg
+/Users/abdulbasit/Desktop/cv project/data/ExDark/SPIC/2015_06400.jpg
+/Users/abdulbasit/Desktop/cv project/data/ExDark/Groundtruth/annotations.png
+/Users/abdulbasit/Desktop/cv project/data/ExDark/Groundtruth/exdark1.png
+/Users/abdulbasit/Desktop/cv project/data/ExDark/Dataset/Thumbnails.png
+/Users/abdulbasit/Desktop/cv project/data/ExDark/SPIC/2015_00003.png
