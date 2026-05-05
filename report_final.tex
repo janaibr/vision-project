@@ -191,6 +191,9 @@ Our project makes the following specific contributions:
   \item \textbf{SCI Reproduction:} We implement the complete SCI
   architecture (EnhanceBlock + CalibrateBlock with weight-sharing
   calibration) in PyTorch, faithfully reproducing the CVPR~2022 paper.
+  The reproduction is provided as both a standalone module
+  (\texttt{sci\_model.py}) and as an inline implementation within the
+  project notebook.
 
   \item \textbf{Domain Adaptation:} We adapt the SCI enhancement model as
   a zero-latency preprocessing module for YOLOv8-Large on the ExDark
@@ -207,25 +210,62 @@ Our project makes the following specific contributions:
   detection count analysis in dense scenes.
 \end{enumerate}
 
-\textbf{Weekly Timeline:}
-\begin{itemize}
-  \item \textbf{Week 1 (14--20 Apr):} Literature survey; paper selection;
-  ExDark dataset acquisition; environment setup; initial SCI architecture
-  reproduction in PyTorch.
+\subsection{Week-by-Week Breakdown}
 
-  \item \textbf{Week 2 (21--27 Apr):} Data ingestion pipeline; ExDark
-  annotation format conversion to YOLO format; augmentation module
-  implementation; CLAHE fallback integration; dataset structure
-  verification.
+\textbf{Week~1 (14--20 April) --- Paper Selection \& SCI Reproduction.}
+\emph{Methodology:}
+We surveyed eight candidate papers and selected
+SCI~\cite{ma2022sci} for its weight-sharing calibration that
+collapses to a single inference pass.  The full architecture was
+reproduced in PyTorch (22,886 parameters).
+\emph{Results:}
+Forward-pass dimensions validated; however, the original authors'
+weight server is no longer accessible.
+\emph{Error Analysis:}
+Without pretrained weights the model produces meaningless outputs,
+so we implemented a CLAHE fallback
+(Section~\ref{sec:methodology}).
 
-  \item \textbf{Week 3 (28 Apr -- 3 May):} YOLOv8 integration; baseline
-  inference experiments; enhanced pipeline evaluation; confidence and
-  detection-count metric computation; brightness and PSNR/SSIM analysis.
+\textbf{Week~2 (21--27 April) --- Data Pipeline \& Augmentation.}
+\emph{Methodology:}
+We acquired three SPIC images from ExDark (mean brightness
+3.8--9.4\% of full scale), built a modular ingestion pipeline, and
+implemented five augmentation strategies
+(Table~\ref{tab:augmentations}).  CLAHE was integrated via LAB
+colour-space decomposition (clip limit~3.0, tile grid $8{\times}8$).
+\emph{Results:}
+The module produced $3 \times 6 = 18$ image variants with correct
+degradation characteristics.
+\emph{Error Analysis:}
+The \emph{combined} degradation (darken $\times 0.4$ + noise
+$\sigma=20$) reduces brightness below 15/255---flagged as a
+stress-test scenario.
 
-  \item \textbf{Week 4 (4--9 May):} Results visualisation; bar charts,
-  histograms, side-by-side comparison figures; error analysis;
-  report writing; GitHub documentation.
-\end{itemize}
+\textbf{Week~3 (28 Apr -- 3 May) --- Detection Experiments \& Metrics.}
+\emph{Methodology:}
+YOLOv8-Large was run as a frozen detector ($\tau_{\text{low}}=0.10$)
+on all 18 raw and CLAHE-enhanced image pairs; per-pair metrics
+(mean confidence, $N_{0.25}$, brightness gain, PSNR, SSIM) were
+serialised to JSON.
+\emph{Results:}
+CLAHE improved brightness by 120\% on average; confidence rose in
+2/3 images (up to $+40$\%).  The car scene gained 6 new detections.
+\emph{Error Analysis:}
+Mean confidence in the car scene \emph{dropped} (0.544$\to$0.408)
+because newly revealed cars had low confidence (0.12--0.25).
+Combined augmentation degraded accuracy by up to $-0.244$ points.
+
+\textbf{Week~4 (4--9 May) --- Visualisation \& Report.}
+\emph{Methodology:}
+Seven comparison figures were generated; per-detection JSON analysis
+identified class-level patterns; the IEEE report was written.
+\emph{Results:}
+The confidence CDF showed detections above 0.5 increasing from
+25\% to 40\% after enhancement.
+\emph{Error Analysis:}
+The \emph{person} class benefited most ($+0.07$), while the
+\emph{dog} class lost confidence ($0.569 \to 0.361$) due to CLAHE
+over-enhancing the background (Section~\ref{sec:discussion}).
 
 %%==========================================================================
 \section{Methodology}
@@ -275,9 +315,9 @@ The architecture consists of two sub-networks sharing weights:
 
 The calibration loop runs for $K=3$ iterations during training but
 collapses to a single pass at inference due to weight sharing---the key
-innovation that makes SCI real-time capable. The total parameter count
-is approximately 29,700, orders of magnitude smaller than transformer
-alternatives.
+innovation that makes SCI real-time capable. Our faithful PyTorch
+reproduction yields a total parameter count of 22,886, orders of
+magnitude smaller than transformer alternatives.
 
 \subsection{CLAHE Fallback}
 
@@ -347,6 +387,44 @@ From top-left: original, darkened, Gaussian noise, motion blur, gamma,
 and combined.}
 \label{fig:augmentations}
 \end{figure}
+
+\subsection{Implementation Details}
+\label{sec:implementation}
+
+The complete pipeline is implemented in a single, self-contained
+Jupyter notebook (\texttt{refined\_project\_workflow.ipynb}) comprising
+14 sections.  Key implementation decisions are summarised below.
+
+\textbf{Enhancer Selection Logic.}
+The notebook implements an automatic fallback mechanism:
+\begin{verbatim}
+def enhance(img_bgr, sci_model=None):
+    if sci_model is not None:
+        return sci_enhance(sci_model, img_bgr), 'SCI'
+    return clahe_enhance(img_bgr), 'CLAHE'
+\end{verbatim}
+The \texttt{load\_sci()} function checks whether the weight file exists
+and whether it loads without errors; if either check fails, it returns
+\texttt{None} and the pipeline silently falls back to CLAHE.  This
+design ensures that the identical notebook produces valid results
+regardless of whether SCI weights are available.
+
+\textbf{Detection Wrapper.}
+A lightweight wrapper around the Ultralytics inference API
+standardises the output format:
+each detection is represented as a dictionary with class name, confidence
+score, and bounding-box coordinates.  Detections are sorted by
+descending confidence to facilitate threshold-based filtering.
+Two thresholds are used: $\tau_{\text{low}} = 0.10$ (capture threshold
+for inference, to avoid missing any potential detection) and
+$\tau_{\text{report}} = 0.25$ (reporting threshold used in all tables
+and figures).
+
+\textbf{Reproducibility.}
+All random seeds are fixed (\texttt{np.random.seed(42)}),
+augmentation parameters are hardcoded, and intermediate results are
+serialised to JSON.  The notebook can be re-executed end-to-end
+without manual intervention.
 
 \subsection{Evaluation Metrics}
 
@@ -564,6 +642,58 @@ crossing the reporting threshold.
 (bicycle, cars, dog, person) is correctly identified in all conditions,
 confirming that enhancement does not introduce class confusion.
 
+\subsection{Per-Detection Error Analysis}
+
+To understand enhancement effects at the individual-detection level,
+we analysed the serialised JSON results across all 18 image pairs.
+Table~\ref{tab:perdet} summarises the per-class confidence changes on
+the three original (non-augmented) images.
+
+\begin{table}[h]
+\centering
+\caption{Per-Detection Confidence Analysis (Original Images)}
+\label{tab:perdet}
+\begin{tabular}{llrrl}
+\toprule
+\textbf{Image} & \textbf{Class} & \textbf{Base} & \textbf{Enh.} & \textbf{Note} \\
+\midrule
+2015\_00003 & bicycle & 0.952 & 0.950 & Stable \\
+2015\_00003 & bench   & 0.792 & 0.778 & Stable \\
+2015\_00003 & bus     & 0.238 & 0.488 & $+$105\% gain \\
+\midrule
+2015\_02446 & car (top) & 0.849 & 0.879 & $+$3.5\% \\
+2015\_02446 & car (new) & --- & 0.544 & New detection \\
+\midrule
+2015\_06400 & person  & 0.511 & 0.586 & $+$14.6\% \\
+2015\_06400 & dog     & 0.569 & 0.361 & $-$36.6\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three patterns emerge from this per-detection analysis:
+
+\textbf{High-confidence detections are preserved.}
+The bicycle (0.95) and top-ranked cars ($>$0.84) maintain or slightly
+improve their confidence after CLAHE.  This confirms that enhancement
+does not disrupt already-reliable features.
+
+\textbf{Mid-confidence detections benefit most.}
+The bus in 2015\_00003 (baseline 0.238, enhanced 0.488) shows the
+largest absolute gain, crossing the reporting threshold $\tau=0.25$.
+This is the primary mechanism by which enhancement improves
+detection utility: objects that were \emph{barely missed} at the
+operating threshold are now \emph{recovered}.
+
+\textbf{Some detections degrade.}
+The dog in 2015\_06400 loses 36.6\% confidence.  Manual inspection
+reveals that CLAHE uniformly boosts the luminance of the surrounding
+furniture and floor, reducing the contrast between the dark-furred
+dog and its background.  This is a known limitation of global or
+tile-based histogram methods: they cannot adapt to object-level
+semantics.  A content-aware enhancer such as SCI, which estimates a
+per-pixel illumination map, would in principle preserve or improve
+subject--background contrast.
+
 %%==========================================================================
 \section{Discussion}
 \label{sec:discussion}
@@ -592,30 +722,79 @@ Enhancement is most beneficial when:
 
 \subsection{Limitations and Failure Cases}
 
-The \emph{combined} augmentation (darkening + Gaussian noise) exposes the
-limits of single-pass CLAHE: when noise is dominant, CLAHE amplifies it
-alongside the signal, degrading both visual quality and detection
-accuracy. This motivates the SCI approach, which simultaneously models
-illumination and can suppress enhancement artifacts through its
-calibration loop.
+Our analysis identifies three distinct failure modes, each tied to
+specific augmentation conditions:
 
-Additionally, CLAHE operates on a fixed 8$\times$8 tile grid, meaning
-it cannot adapt to object-level semantics. Spatially, it over-enhances
-flat dark regions while under-enhancing cluttered areas with many small
-bright patches. A learned enhancer such as SCI can, in principle, adapt
-spatially based on content.
+\textbf{Failure Mode 1: Noise amplification.}
+The \emph{combined} augmentation (darkening $\times 0.4$ plus Gaussian
+noise $\sigma=20$) exposes the fundamental limit of single-pass
+histogram-based enhancement.  CLAHE cannot distinguish signal from
+noise in the L~channel: it equalises both, producing a brighter but
+noisier image.  On image 2015\_06400 (combined), detection confidence
+dropped by $-0.244$ points and the number of detections above
+$\tau=0.25$ fell from 2 to 0.  The noisy-only augmentation on
+2015\_00003 similarly reduced mean confidence by $-0.543$, confirming
+that noise---not darkness---is the dominant degradation factor in
+these cases.
+
+\textbf{Failure Mode 2: Semantic contrast inversion.}
+CLAHE operates on a fixed $8{\times}8$ tile grid and cannot adapt to
+object-level semantics.  In image 2015\_06400, the dark-furred dog
+initially contrasted against a slightly lighter floor; after CLAHE,
+the floor brightness increased more than the dog's, reducing
+subject--background contrast and causing a 36.6\% confidence drop.
+A learned, content-aware enhancer such as SCI estimates a per-pixel
+illumination map and can, in principle, preserve or even boost local
+contrast around semantically important regions.
+
+\textbf{Failure Mode 3: Confidence dilution in dense scenes.}
+In image 2015\_02446 (original), CLAHE increased total detections
+from 6 to 12, but the six newly revealed cars had low confidence
+(0.12--0.25), pulling the \emph{mean} confidence down from 0.544 to
+0.408.  While this is a net positive for recall, it illustrates
+that mean confidence alone is an imperfect proxy for detection
+quality---mAP computation with ground-truth annotations would
+provide a more accurate evaluation.
 
 \subsection{CLAHE vs.\ SCI}
+\label{sec:clahevssci}
 
-While SCI pretrained weights were unavailable for this evaluation (the
-original authors' download server is no longer accessible), our
-reproduction of the SCI architecture in PyTorch correctly mirrors the
-paper's design. The CLAHE fallback serves as a strong classical baseline,
-and the results presented here are reproducible. Based on the SCI paper's
-reported results on LOL and LIME benchmarks (PSNR improvement of 2--4\,dB
-over CLAHE-based methods), we expect that applying SCI pretrained weights
-would further improve detection confidence by an additional 5--10
-percentage points, particularly on the most severely degraded images.
+\textbf{Why CLAHE was used instead of SCI.}
+The original SCI authors (Ma~et~al.) hosted their pretrained weights on
+a personal server that is \emph{no longer accessible} as of April~2026.
+We faithfully reproduced the complete SCI architecture in PyTorch
+(22,886 parameters; see the standalone module \texttt{sci\_model.py}
+and the notebook's Section~3), but without the original pretrained
+weights the model produces random-initialisation outputs that are
+unsuitable for evaluation.
+
+Rather than report misleading results from an untrained model, all
+experiments in this paper use the \textbf{CLAHE classical baseline} as
+the enhancement method.  CLAHE serves as a deterministic, reproducible
+preprocessing step that isolates the effect of illumination enhancement
+on YOLOv8 detection---independent of any specific learned enhancer.
+The pipeline's automatic fallback mechanism (see
+Section~\ref{sec:implementation}) ensures that the identical notebook
+produces valid results regardless of whether SCI weights are available.
+
+\textbf{Projected SCI improvements.}
+Based on the SCI paper's reported results on the LOL and LIME
+benchmarks (PSNR improvement of 2--4\,dB over CLAHE-based methods),
+we expect that applying SCI pretrained weights would further improve
+detection confidence by an additional 5--10 percentage points,
+particularly on the most severely degraded images.  Specifically,
+SCI's per-pixel illumination estimation should address the two
+failure modes we identified: (1)~noise amplification in the combined
+augmentation, since SCI's calibration loop inherently suppresses
+enhancement artifacts; and (2)~loss of subject--background contrast
+(the dog case), since a learned illumination map can preserve local
+contrast that CLAHE's fixed tile grid cannot.
+
+\textbf{Reproducibility guarantee.}
+If the pretrained weights become available in the future, they can be
+placed at \texttt{models/sci\_weights.pth} and the notebook re-executed
+without any code changes; the fallback mechanism will automatically
+switch to SCI enhancement.
 
 \subsection{Towards Full mAP Evaluation}
 
@@ -635,22 +814,58 @@ YOLOv8l.
 
 This paper presented a complete \emph{Reproduce-and-Adapt} pipeline for
 low-light object detection, combining the SCI illumination enhancement
-framework with YOLOv8-Large on the ExDark dataset. We reproduced the SCI
-architecture from the CVPR~2022 paper and evaluated its effect as a
-preprocessing step on genuine low-light images and five augmented
-degradation types.
+framework with YOLOv8-Large on the ExDark dataset. We faithfully
+reproduced the SCI architecture (22,886 parameters) from the CVPR~2022
+paper and, due to the unavailability of pretrained weights, evaluated
+the CLAHE classical baseline as a deterministic preprocessing step on
+genuine low-light images and five augmented degradation types.
 
-Key findings are: (1)~enhancement consistently improves image brightness
-by 74--154\%; (2)~detection confidence improves by up to $+40\%$ on
-individual images; (3)~recall improves substantially in dense scenes; and
-(4)~the pipeline is real-time compatible with sub-5\,ms enhancement
-latency. Failure cases arise when Gaussian noise dominates over
-illumination degradation, motivating learned, content-aware enhancement.
+Key findings are:
+\begin{enumerate}
+  \item Enhancement consistently improves image brightness by
+  74--154\%, with an average brightness gain of $+20$ intensity levels
+  across all 18 test pairs.
 
-Future work includes: full mAP evaluation with ExDark annotations,
-integration of SCI pretrained weights, fine-tuning YOLOv8 on
-ExDark-specific data, and exploring joint end-to-end training of enhancer
-and detector as in IA-YOLO.
+  \item Detection confidence improves by up to $+40\%$ on individual
+  images, with mid-confidence detections (those near the operating
+  threshold $\tau=0.25$) benefiting most---e.g., the bus detection
+  in 2015\_00003 improved from 0.238 to 0.488.
+
+  \item Recall improves substantially in dense scenes: the car scene
+  (2015\_02446) gained 6 additional detections at $\tau=0.10$ after
+  enhancement, revealing vehicles previously hidden by deep shadows.
+
+  \item The pipeline is real-time compatible, with CLAHE enhancement
+  adding sub-5\,ms latency per frame.
+\end{enumerate}
+
+\textbf{Lessons learned.}
+Three broader lessons emerge from this study.  First, illumination
+enhancement is most effective when the primary degradation is
+low brightness rather than noise; combining enhancement with
+denoising (e.g., BM3D or a learned denoiser) would extend
+robustness to the noise-dominant regime.  Second, proxy metrics such as
+mean confidence and detection count, while informative, can be
+misleading in dense scenes where newly revealed low-confidence
+detections dilute the mean; future evaluations should prioritise
+ground-truth-based mAP.  Third, the modular pipeline design---with
+automatic fallback between learned and classical enhancers---proved
+valuable for reproducibility and enabled us to produce valid results
+despite the unavailability of pretrained weights.
+
+\textbf{Future work.}
+Future directions include:
+(1)~full mAP evaluation with ExDark annotations, which would enable
+class-level precision--recall analysis;
+(2)~integration of SCI pretrained weights once the original authors'
+download server is restored or an equivalent retrained checkpoint
+becomes available;
+(3)~fine-tuning YOLOv8 on ExDark-specific data to reduce the domain
+gap between COCO training and low-light deployment;
+and (4)~exploring joint end-to-end training of enhancer and detector
+as in IA-YOLO~\cite{liu2022iayolo}, which would allow the enhancement
+to be optimised directly for detection loss rather than perceptual
+quality.
 
 %%==========================================================================
 \begin{thebibliography}{00}

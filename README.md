@@ -60,9 +60,27 @@ Or on Windows (PowerShell):
 Invoke-WebRequest -Uri "https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8l.pt" -OutFile "models\yolov8l.pt"
 ```
 
-### SCI Pretrained Weights (optional)
+### SCI Pretrained Weights (optional — see note below)
 The SCI pretrained weights from the original authors can be placed at `models/sci_weights.pth`.  
 If not available, the pipeline automatically falls back to **CLAHE** enhancement.
+
+> **Why `sci_weights.pth` is not included in this repository:**  
+> The original SCI authors (Ma et al., CVPR 2022) hosted their pretrained weights on a
+> personal server that is **no longer accessible** at the time of this project (April–May 2026).
+> We faithfully reproduced the full SCI architecture in PyTorch (see `sci_model.py` and the
+> notebook's Section 3), but without the original pretrained weights the model produces
+> random-initialisation outputs that are unsuitable for evaluation.  
+>
+> Rather than report misleading SCI results from an untrained model, **all experiments in the
+> report use the CLAHE classical baseline** as the enhancement method. CLAHE serves as a
+> deterministic, reproducible preprocessing step that isolates the effect of illumination
+> enhancement on YOLOv8 detection—independent of any specific learned enhancer. The report
+> explicitly discusses this choice in Section 6.4 ("CLAHE vs. SCI") and projects expected
+> SCI gains based on the original paper's benchmarks.  
+>
+> If the pretrained weights become available in the future, simply place them at
+> `models/sci_weights.pth` and re-run the notebook; the pipeline will automatically switch
+> to SCI enhancement with no code changes required.
 
 ---
 
